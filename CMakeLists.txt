@@ -1,20 +1,17 @@
 cmake_minimum_required(VERSION 3.20)
 
-# macOS note: CMake initializes compiler flags from environment variables like CFLAGS/CXXFLAGS. 
-# if your shell has `-fopenmp` in CXXFLAGS, AppleClang will fail.
-# clear init flags BEFORE enabling languages (before `project()`).
-if(APPLE)
-  set(CMAKE_C_FLAGS_INIT "")
-  set(CMAKE_CXX_FLAGS_INIT "")
-endif()
-
-project(fluid_mac CXX)
+project(cuda-fluids CUDA CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# macOS OpenGL deprecation silencer
-add_compile_definitions(GL_SILENCE_DEPRECATION)
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 75 86 89)
+    message(STATUS "default CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+endif()
 
 include(FetchContent)
 
@@ -29,6 +26,18 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+# OpenGL loader
+find_package(GLEW)
+if(NOT GLEW_FOUND)
+    # try pkg-config
+    find_package(PkgConfig)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(GLEW REQUIRED glew)
+    else()
+        message(FATAL_ERROR "GLEW not found. Install with: apt install libglew-dev (Linux) or brew install glew (macOS)")
+    endif()
+endif()
+
 # ImGui
 FetchContent_Declare(
   imgui
@@ -37,7 +46,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
-# build ImGui as a static lib
+# Build ImGui as a static lib
 add_library(imgui_lib STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -49,37 +58,66 @@ add_library(imgui_lib STATIC
 target_include_directories(imgui_lib PUBLIC
   ${imgui_SOURCE_DIR}
   ${imgui_SOURCE_DIR}/backends
+  ${GLEW_INCLUDE_DIRS}
 )
-target_link_libraries(imgui_lib PUBLIC glfw)
+target_link_libraries(imgui_lib PUBLIC glfw ${GLEW_LIBRARIES})
 
 # OpenGL
 find_package(OpenGL REQUIRED)
 
-# main app target: executable stored at ./build/fluid
+# CUDA
+find_package(CUDAToolkit REQUIRED)
+
+# main executable
 add_executable(fluid
   src/main.cpp
-  src/fluid.cpp
+  src/fluid.cu
 )
 
-target_include_directories(fluid PRIVATE src)
+target_include_directories(fluid PRIVATE 
+  src
+  ${CUDAToolkit_INCLUDE_DIRS}
+)
 
 target_link_libraries(fluid PRIVATE
   imgui_lib
+  ${GLEW_LIBRARIES}
   OpenGL::GL
+  CUDA::cudart
 )
 
-# OpenMP (optional, reccommended for performance on large simulations)
-option(FLUID_ENABLE_OPENMP "Enable OpenMP (requires libomp on macOS)" ON)
+set_target_properties(fluid PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
 
-if(FLUID_ENABLE_OPENMP)
-  find_package(OpenMP)
-  if(OpenMP_CXX_FOUND)
-    message(STATUS "OpenMP enabled")
-    target_link_libraries(fluid PRIVATE OpenMP::OpenMP_CXX)
-    target_compile_definitions(fluid PRIVATE FLUID_USE_OPENMP=1)
-  else()
-    message(WARNING "OpenMP requested but not found; building without OpenMP")
-  endif()
-else()
-  message(STATUS "OpenMP disabled (default)")
+# CUDA optimization flags
+target_compile_options(fluid PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:
+        --use_fast_math
+        --extra-device-vectorization
+        -lineinfo
+    >
+)
+
+# Release build optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(fluid PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:
+            -O3
+            --ptxas-options=-v
+        >
+    )
 endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(fluid PRIVATE dl pthread)
+    set_target_properties(fluid PROPERTIES
+        INSTALL_RPATH "${CUDAToolkit_LIBRARY_DIR}"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+message(STATUS "architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+message(STATUS "CUDA Toolkit root: ${CUDAToolkit_ROOT}")
+message(STATUS "CUDA ver: ${CUDAToolkit_VERSION}")

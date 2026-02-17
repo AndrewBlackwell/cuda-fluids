@@ -546,7 +546,7 @@ void Fluid2D::toRGBA(std::vector<std::uint8_t> &outRGBA, float gain, float gamma
     if (h_rgba_pinned && required_size > 256 * 1024)
     {
         CUDA_CHECK(cudaMemcpy(h_rgba_pinned, d_rgba, required_size, cudaMemcpyDeviceToHost));
-        std::memcpy(outRGBA.data(), h_rgba_pinned, required_size);
+        memcpy(outRGBA.data(), h_rgba_pinned, required_size);
     }
     else
     {

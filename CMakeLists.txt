@@ -9,7 +9,9 @@ set(CMAKE_CUDA_STANDARD_REQUIRED OFF)
 
 
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 75 86 89)
+    # CUDA 10.1 supports up to compute capability 75 (Turing)
+    # for A4000 (what I'm using: 86), I need CUDA 11.0+
+    set(CMAKE_CUDA_ARCHITECTURES 70 75)
     message(STATUS "default CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
 endif()
 
@@ -95,7 +97,6 @@ set_target_properties(fluid PROPERTIES
 target_compile_options(fluid PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:
         --use_fast_math
-        --extra-device-vectorization
         -lineinfo
     >
 )

@@ -105,7 +105,6 @@ target_compile_options(fluid PRIVATE
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(fluid PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
-            -O3
             --ptxas-options=-v
         >
     )

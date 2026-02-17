@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vector>
 #include <cstdint>
 
@@ -20,6 +21,8 @@ class Fluid2D
 {
 public:
     explicit Fluid2D(int N);
+    ~Fluid2D();
+
     int N() const { return mN; }
 
     void addSplat(float x, float y, float dx, float dy,
@@ -37,23 +40,25 @@ private:
     int mN;
     int mSize; // (N+2)*(N+2) including boundary padding
 
-    std::vector<float> u, v, u0, v0;
+    // devie memory pointers
+    float *d_u, *d_v, *d_u0, *d_v0;
+    float *d_rD, *d_gD, *d_bD, *d_r0, *d_g0, *d_b0;
+    // Persistent device buffer for RGBA output (avoid repeated alloc/free)
+    mutable uint8_t *d_rgba;
+    mutable size_t d_rgba_size;
 
-    std::vector<float> rD, gD, bD, r0, g0, b0;
-
-    inline int IX(int i, int j) const { return i + (mN + 2) * j; }
-
+    // pinned host memory for faster transfers
+    mutable uint8_t *h_rgba_pinned;
+    mutable size_t h_rgba_pinned_size;
     // stable fluids core
-    void add_source(std::vector<float> &x, const std::vector<float> &s, float dt);
-    void set_bnd(int b, std::vector<float> &x);
-    void lin_solve(int b, std::vector<float> &x, const std::vector<float> &x0, float a, float c, int iters);
-    void diffuse(int b, std::vector<float> &x, const std::vector<float> &x0, float diff, float dt, int iters);
-    void advect(int b, std::vector<float> &d, const std::vector<float> &d0, const std::vector<float> &u, const std::vector<float> &v, float dt);
-    void project(std::vector<float> &u, std::vector<float> &v, std::vector<float> &p, std::vector<float> &div, int iters);
+    void add_source(float *x, const float *s, float dt);
+    void set_bnd(int b, float *x);
+    void lin_solve(int b, float *x, const float *x0, float a, float c, int iters);
+    void diffuse(int b, float *x, const float *x0, float diff, float dt, int iters);
+    void advect(int b, float *d, const float *d0, const float *u, const float *v, float dt);
+    void project(float *u, float *v, float *p, float *div, int iters);
 
     // velocity and density step functions
     void vel_step(float visc, float dt, int iters);
-    void dens_step(std::vector<float> &x, std::vector<float> &x0, float diff, float dt, int iters);
-
-    static float clampf(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
+    void dens_step(float *x, float *x0, float diff, float dt, int iters);
 };

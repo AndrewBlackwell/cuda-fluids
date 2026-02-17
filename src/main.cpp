@@ -3,13 +3,7 @@
 #include <vector>
 #include <chrono>
 
-#if defined(__APPLE__)
-#include <OpenGL/gl3.h>
-#include <OpenGL/gl3ext.h>
-#endif
-
-// for OpenGL context and window, this is the macOS-compatible GLFW include
-// on Windows or Linux, you might use <GL/gl.h> or similar instead
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
 #include "imgui.h"
@@ -108,30 +102,45 @@ int main()
     if (!glfwInit())
         return 1;
 
+    // requesting OpenGL 4.5 core profile context
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
 
     const int winW = 1024, winH = 1024;
-    GLFWwindow *window = glfwCreateWindow(winW, winH, "CPU Fluid Simulation (OpenGL 4.1)", nullptr, nullptr);
+    GLFWwindow *window = glfwCreateWindow(winW, winH, "CUDA Fluid Simulation (OpenGL 4.5)", nullptr, nullptr);
     if (!window)
         return 2;
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
+
+    // initialize glew, after creating gl context
+    glewExperimental = GL_TRUE;
+    GLenum err = glewInit();
+    if (err != GLEW_OK)
+    {
+        fprintf(stderr, "Failed to initialize GLEW: %s\n", glewGetErrorString(err));
+        return 3;
+    }
+
+    printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
+    printf("GLSL Version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
     // ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 150");
+    ImGui_ImplOpenGL3_Init("#version 450 core");
 
-    // shaders (GLSL 150)
+    // shaders
     const char *VS = R"GLSL(
-    #version 150
-    in vec2 aPos;
-    in vec2 aUV;
+    #version 450 core
+    layout(location = 0) in vec2 aPos;
+    layout(location = 1) in vec2 aUV;
     out vec2 vUV;
     void main() {
       vUV = aUV;
@@ -140,10 +149,10 @@ int main()
   )GLSL";
 
     const char *FS = R"GLSL(
-    #version 150
-    uniform sampler2D uTex;
+    #version 450 core
+    layout(location = 0) out vec4 FragColor;
+    layout(binding = 0) uniform sampler2D uTex;
     in vec2 vUV;
-    out vec4 FragColor;
     void main() {
       vec3 c = texture(uTex, vUV).rgb;
       FragColor = vec4(c, 1.0);
@@ -152,7 +161,6 @@ int main()
 
     GLuint prog = makeProgram(VS, FS);
     glUseProgram(prog);
-    glUniform1i(glGetUniformLocation(prog, "uTex"), 0);
 
     // fullscreen quad
     GLuint vao = 0, vbo = 0, ebo = 0;

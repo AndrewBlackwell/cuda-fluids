@@ -1,6 +1,6 @@
 # CUDA Fluid Simulation
 
-This is a CUDA port of my previous OpenMP CPU-based stable fluid simulator. I wanted to see how much faster it could run on a GPU, so I rented a Linux desktop + NVIDIA A5000 via RunPod and rewrote the whole thing.
+This is a CUDA port of my previous [OpenMP CPU-based stable fluid simulator](https://github.com/AndrewBlackwell/fluid-sim). I wanted to see how much faster it could run on a GPU, so I rented a Linux desktop + NVIDIA A5000 via RunPod and rewrote the whole thing.
 
 I was happy to find that after some optimization, it's way faster. At 4096×4096 resolution, I'm getting 136 FPS while fully saturating the GPU. Full benchmarks in [benchmarks/BENCHMARK.md](./benchmarks/BENCHMARKS.md).
 

@@ -28,6 +28,12 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --parallel
 ```
 
+<img
+  src="./docs/build.png"
+  alt="Build Output"
+  width="70%"
+/>
+
 ## Some Pertinent Optimizations
 
 - **Persistent GPU buffers** - no repeated allocation/deallocation (saves ~3ms/frame)
@@ -38,3 +44,9 @@ cmake --build . --parallel
 - **Direct OpenGL interop** - minimal CPU involvement in rendering
 
 The big wins came from keeping data on the device and only transferring the final RGBA texture back for display.
+
+<img
+  src="./docs/4096x4096.png"
+  alt="Simulator Running at 4096x4096"
+  width="70%"
+/>

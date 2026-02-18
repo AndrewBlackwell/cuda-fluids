@@ -5,14 +5,14 @@
 
 struct FluidParams
 {
-    int N = 512; // grid interior size (N x N) cells
+    int N = 4096; // grid interior size (N x N) cells
     float dt = 0.0325f;
     float visc = 0.00000f; // velocity diffusion (viscosity)
     float diff = 0.00000f; // dye diffusion (often 0 for crisp filaments)
     int iters = 10;        // solver iterations (diffusion + pressure)
     float vel_decay = 1.0f;
     float dye_decay = 0.950f;
-    float splat_radius = 3.0f; // measured in cells
+    float splat_radius = 8.0f; // measured in cells
     float force = 1500.0f;     // velocity injection scale
     float dye_amount = 200.0f; // dye injection scale
 };

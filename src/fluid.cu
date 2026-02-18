@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <algorithm>
 
+#define PROFILE_KERNELS
+
 #define CUDA_CHECK(call)                                                     \
     do                                                                       \
     {                                                                        \
@@ -15,6 +17,55 @@
             exit(EXIT_FAILURE);                                              \
         }                                                                    \
     } while (0)
+
+#ifdef PROFILE_KERNELS
+#include <fstream>
+#include <string>
+static cudaEvent_t prof_start, prof_stop;
+static bool prof_initialized = false;
+static FILE *prof_file = nullptr;
+static int prof_frame_count = 0;
+
+void init_profiling()
+{
+    if (!prof_initialized)
+    {
+        cudaEventCreate(&prof_start);
+        cudaEventCreate(&prof_stop);
+        prof_file = fopen("kernel_profile.csv", "w");
+        fprintf(prof_file, "frame,kernel,time_ms\n");
+        prof_initialized = true;
+    }
+}
+
+void cleanup_profiling()
+{
+    if (prof_initialized)
+    {
+        if (prof_file)
+            fclose(prof_file);
+        cudaEventDestroy(prof_start);
+        cudaEventDestroy(prof_stop);
+    }
+}
+
+#define PROFILE_KERNEL(kernel_name, kernel_call)                                   \
+    do                                                                             \
+    {                                                                              \
+        cudaEventRecord(prof_start);                                               \
+        kernel_call;                                                               \
+        cudaEventRecord(prof_stop);                                                \
+        cudaEventSynchronize(prof_stop);                                           \
+        float ms = 0;                                                              \
+        cudaEventElapsedTime(&ms, prof_start, prof_stop);                          \
+        if (prof_file)                                                             \
+            fprintf(prof_file, "%d,%s,%.6f\n", prof_frame_count, kernel_name, ms); \
+    } while (0)
+#else
+#define PROFILE_KERNEL(kernel_name, kernel_call) kernel_call
+void init_profiling() {}
+void cleanup_profiling() {}
+#endif
 
 #define BLOCK_SIZE 16
 
@@ -303,12 +354,16 @@ Fluid2D::Fluid2D(int N) : mN(N), mSize((N + 2) * (N + 2)),
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    init_profiling();
+
     fprintf(stderr, "[CUDA] Fluid simulation initialized (%dx%d grid, %.2f MB VRAM)\n",
             N, N, (10 * mSize * sizeof(float)) / (1024.0 * 1024.0));
 }
 
 Fluid2D::~Fluid2D()
 {
+    cleanup_profiling();
+
     cudaError_t err;
 
     if ((err = cudaFree(d_u)) != cudaSuccess)
@@ -367,7 +422,8 @@ void Fluid2D::add_source(float *x, const float *s, float dt)
 {
     int blockSize = 256;
     int gridSize = (mSize + blockSize - 1) / blockSize;
-    add_source_kernel<<<gridSize, blockSize>>>(x, s, dt, mSize);
+    PROFILE_KERNEL("add_source",
+                   add_source_kernel<<<gridSize, blockSize>>>(x, s, dt, mSize));
     // cudaGetLastError() doesn't synchronize, just checks for launch errors
     // actual execution errors will be caught by next synchronizing call
 }
@@ -411,7 +467,8 @@ void Fluid2D::advect(int b, float *d, const float *d0, const float *u, const flo
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    advect_kernel<<<gridSize, blockSize>>>(b, d, d0, u, v, dt0, mN);
+    PROFILE_KERNEL("advect",
+                   advect_kernel<<<gridSize, blockSize>>>(b, d, d0, u, v, dt0, mN));
     set_bnd(b, d);
 }
 
@@ -420,13 +477,15 @@ void Fluid2D::project(float *u, float *v, float *p, float *div, int iters)
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    project_divergence_kernel<<<gridSize, blockSize>>>(div, p, u, v, mN);
+    PROFILE_KERNEL("project_div",
+                   project_divergence_kernel<<<gridSize, blockSize>>>(div, p, u, v, mN));
     set_bnd(0, div);
     set_bnd(0, p);
 
     lin_solve(0, p, div, 1.0f, 4.0f, iters);
 
-    project_gradient_kernel<<<gridSize, blockSize>>>(u, v, p, mN);
+    PROFILE_KERNEL("project_grad",
+                   project_gradient_kernel<<<gridSize, blockSize>>>(u, v, p, mN));
     set_bnd(1, u);
     set_bnd(2, v);
 }
@@ -478,9 +537,10 @@ void Fluid2D::addSplat(float xN, float yN, float dxN, float dyN,
     dim3 gridSize((2 * rInt + blockSize.x - 1) / blockSize.x,
                   (2 * rInt + blockSize.y - 1) / blockSize.y);
 
-    add_splat_kernel<<<gridSize, blockSize>>>(
-        d_u0, d_v0, d_r0, d_g0, d_b0,
-        cx, cy, rad, rInt, fx, fy, r, g, b, p.dye_amount, mN);
+    PROFILE_KERNEL("splat",
+                   add_splat_kernel<<<gridSize, blockSize>>>(
+                       d_u0, d_v0, d_r0, d_g0, d_b0,
+                       cx, cy, rad, rInt, fx, fy, r, g, b, p.dye_amount, mN));
 }
 
 void Fluid2D::step(const FluidParams &p)
@@ -491,17 +551,23 @@ void Fluid2D::step(const FluidParams &p)
     dens_step(d_gD, d_g0, p.diff, p.dt, p.iters);
     dens_step(d_bD, d_b0, p.diff, p.dt, p.iters);
 
+#ifdef PROFILE_KERNELS
+    prof_frame_count++;
+#endif
+
     // apply dissipation
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    apply_decay_kernel<<<gridSize, blockSize>>>(
-        d_u, d_v, d_rD, d_gD, d_bD, p.vel_decay, p.dye_decay, mN);
+    PROFILE_KERNEL("decay",
+                   apply_decay_kernel<<<gridSize, blockSize>>>(
+                       d_u, d_v, d_rD, d_gD, d_bD, p.vel_decay, p.dye_decay, mN));
 
     // clear
     int blockSize1D = 256;
     int gridSize1D = (mSize + blockSize1D - 1) / blockSize1D;
-    clear_sources_kernel<<<gridSize1D, blockSize1D>>>(
-        d_u0, d_v0, d_r0, d_g0, d_b0, mSize);
+    PROFILE_KERNEL("clear_sources",
+                   clear_sources_kernel<<<gridSize1D, blockSize1D>>>(
+                       d_u0, d_v0, d_r0, d_g0, d_b0, mSize));
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -540,7 +606,8 @@ void Fluid2D::toRGBA(std::vector<std::uint8_t> &outRGBA, float gain, float gamma
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    toRGBA_kernel<<<gridSize, blockSize>>>(d_rD, d_gD, d_bD, d_rgba, gain, invGamma, mN);
+    PROFILE_KERNEL("toRGBA",
+                   toRGBA_kernel<<<gridSize, blockSize>>>(d_rD, d_gD, d_bD, d_rgba, gain, invGamma, mN));
 
     // copy result back to host; pinned mem if large, direct if small enough
     if (h_rgba_pinned && required_size > 256 * 1024)

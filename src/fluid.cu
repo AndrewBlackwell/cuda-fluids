@@ -423,7 +423,7 @@ void Fluid2D::add_source(float *x, const float *s, float dt)
     int blockSize = 256;
     int gridSize = (mSize + blockSize - 1) / blockSize;
     PROFILE_KERNEL("add_source",
-                   add_source_kernel<<<gridSize, blockSize>>>(x, s, dt, mSize));
+                   (add_source_kernel<<<gridSize, blockSize>>>(x, s, dt, mSize)));
     // cudaGetLastError() doesn't synchronize, just checks for launch errors
     // actual execution errors will be caught by next synchronizing call
 }
@@ -468,7 +468,7 @@ void Fluid2D::advect(int b, float *d, const float *d0, const float *u, const flo
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     PROFILE_KERNEL("advect",
-                   advect_kernel<<<gridSize, blockSize>>>(b, d, d0, u, v, dt0, mN));
+                   (advect_kernel<<<gridSize, blockSize>>>(b, d, d0, u, v, dt0, mN)));
     set_bnd(b, d);
 }
 
@@ -478,14 +478,14 @@ void Fluid2D::project(float *u, float *v, float *p, float *div, int iters)
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     PROFILE_KERNEL("project_div",
-                   project_divergence_kernel<<<gridSize, blockSize>>>(div, p, u, v, mN));
+                   (project_divergence_kernel<<<gridSize, blockSize>>>(div, p, u, v, mN)));
     set_bnd(0, div);
     set_bnd(0, p);
 
     lin_solve(0, p, div, 1.0f, 4.0f, iters);
 
     PROFILE_KERNEL("project_grad",
-                   project_gradient_kernel<<<gridSize, blockSize>>>(u, v, p, mN));
+                   (project_gradient_kernel<<<gridSize, blockSize>>>(u, v, p, mN)));
     set_bnd(1, u);
     set_bnd(2, v);
 }
@@ -538,9 +538,9 @@ void Fluid2D::addSplat(float xN, float yN, float dxN, float dyN,
                   (2 * rInt + blockSize.y - 1) / blockSize.y);
 
     PROFILE_KERNEL("splat",
-                   add_splat_kernel<<<gridSize, blockSize>>>(
+                   (add_splat_kernel<<<gridSize, blockSize>>>(
                        d_u0, d_v0, d_r0, d_g0, d_b0,
-                       cx, cy, rad, rInt, fx, fy, r, g, b, p.dye_amount, mN));
+                       cx, cy, rad, rInt, fx, fy, r, g, b, p.dye_amount, mN)));
 }
 
 void Fluid2D::step(const FluidParams &p)
@@ -559,15 +559,15 @@ void Fluid2D::step(const FluidParams &p)
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
     PROFILE_KERNEL("decay",
-                   apply_decay_kernel<<<gridSize, blockSize>>>(
-                       d_u, d_v, d_rD, d_gD, d_bD, p.vel_decay, p.dye_decay, mN));
+                   (apply_decay_kernel<<<gridSize, blockSize>>>(
+                       d_u, d_v, d_rD, d_gD, d_bD, p.vel_decay, p.dye_decay, mN)));
 
     // clear
     int blockSize1D = 256;
     int gridSize1D = (mSize + blockSize1D - 1) / blockSize1D;
     PROFILE_KERNEL("clear_sources",
-                   clear_sources_kernel<<<gridSize1D, blockSize1D>>>(
-                       d_u0, d_v0, d_r0, d_g0, d_b0, mSize));
+                   (clear_sources_kernel<<<gridSize1D, blockSize1D>>>(
+                       d_u0, d_v0, d_r0, d_g0, d_b0, mSize)));
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -607,7 +607,7 @@ void Fluid2D::toRGBA(std::vector<std::uint8_t> &outRGBA, float gain, float gamma
     dim3 gridSize((mN + BLOCK_SIZE - 1) / BLOCK_SIZE, (mN + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     PROFILE_KERNEL("toRGBA",
-                   toRGBA_kernel<<<gridSize, blockSize>>>(d_rD, d_gD, d_bD, d_rgba, gain, invGamma, mN));
+                   (toRGBA_kernel<<<gridSize, blockSize>>>(d_rD, d_gD, d_bD, d_rgba, gain, invGamma, mN)));
 
     // copy result back to host; pinned mem if large, direct if small enough
     if (h_rgba_pinned && required_size > 256 * 1024)

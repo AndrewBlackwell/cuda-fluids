@@ -9,31 +9,42 @@ In a sentence: the 4096² grid saturates the A5000 completely, and scaling is ne
 - Grid sizes: 512², 2048², 4096²
 - Profiling: CUDA events for kernel timing, nvidia-smi for GPU utilization
 - 8 CUDA kernels: add_source, advect, project_div, project_grad, splat, decay, clear_sources, toRGBA
+- Numbers below are mean values; GPU/Mem util use active samples (sm > 0)
+- Latency stats are per-frame GPU kernel time (sum of kernels)
 
 ### Performance
 
-| Grid Size | Frame Time | FPS Limit | GPU Util | Mem Util | Takeaway         |
-| --------- | ---------- | --------- | -------- | -------- | ---------------- |
-| 512²      | ~0.07ms    | ~14000    | 20-30%   | ~30%     | Underutilized    |
-| 2048²     | 0.558ms    | 1793      | 60-85%   | 73-88%   | Good utilization |
-| 4096²     | 7.346ms    | 136       | 75-100%  | 80-100%  | Fully saturated  |
+| Grid Size | Frame Time | FPS Limit | avg. GPU Util | avg. Mem Util | Takeaway         |
+| --------- | ---------- | --------- | ------------- | ------------- | ---------------- |
+| 512²      | n/a        | n/a       | 25.07%        | 0.82%         | Underutilized    |
+| 2048²     | 0.558ms    | 1793.2    | 61.23%        | 49.95%        | Good utilization |
+| 4096²     | 7.346ms    | 176.1     | 88.23%        | 93.32%        | Fully saturated  |
+
+#### Latency (Frame Time, GPU Kernels)
+
+| Grid Size | mean    | p50     | p95     | p99     | min     | max     |
+| --------- | ------- | ------- | ------- | ------- | ------- | ------- |
+| 2048²     | 0.558ms | 0.556ms | 0.608ms | 0.622ms | 0.154ms | 0.678ms |
+| 4096²     | 7.346ms | 7.366ms | 7.390ms | 7.399ms | 2.328ms | 7.470ms |
+
+Tail latency at 4096²: p99 is 7.399ms (0.72% over mean)
 
 #### Kernel Breakdown (4096×4096)
 
 | Kernel        | Time (ms) | % of Frame |
 | ------------- | --------- | ---------- |
-| decay         | 1.493     | 20.3%      |
-| project_grad  | 0.588     | 8.0%       |
-| clear_sources | 0.450     | 6.1%       |
-| project_div   | 0.374     | 5.1%       |
-| toRGBA        | 0.369     | 5.0%       |
-| advect        | 0.338     | 4.6%       |
-| add_source    | 0.283     | 3.9%       |
-| splat         | 0.023     | 0.3%       |
+| decay         | 1.493     | 20.33%     |
+| project_grad  | 0.588     | 8.00%      |
+| clear_sources | 0.450     | 6.13%      |
+| project_div   | 0.374     | 5.10%      |
+| toRGBA        | 0.369     | 5.03%      |
+| advect        | 0.338     | 4.60%      |
+| add_source    | 0.283     | 3.85%      |
+| splat         | 0.023     | 0.32%      |
 
 ### A Note On Scaling...
 
-2048² to 4096²: 16× more cells, 13× slower (which shows good efficiency)
+2048² to 4096²: 16× more cells, 13.16× slower (0.558ms -> 7.346ms)
 At 4096², memory bandwidth is the bottleneck (100% utilization)
 
 ### System Specs
